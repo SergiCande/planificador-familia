@@ -157,9 +157,9 @@ dialog::backdrop{background:#0008}
   <h2 id="dt">Nueva tarea</h2>
   <label>Título<input id="ftitle" maxlength="120" required></label>
   <label>Descripción o notas<textarea id="fdesc" rows="2" maxlength="2000"></textarea></label>
-  <div class="row2"><label>Fecha<input id="fdate" type="date" required></label><label>Hora de inicio<input id="ftime" type="time"></label></div>
-  <div class="row2"><label>Duración (minutos)<input id="fdur" type="number" min="5" max="1440" step="5" value="30" required></label>
-  <label>Responsable<select id="fresp"></select></label></div>
+  <label>Fecha<input id="fdate" type="date" required></label>
+  <div class="row2"><label>Hora de inicio<input id="ftime" type="time" required></label><label>Hora final<input id="fend" type="time" required></label></div>
+  <label>Responsable<select id="fresp"></select></label>
   <div class="row2"><label>Prioridad<select id="fpri"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></label>
   <label>Categoría<select id="fcat"></select></label></div>
   <div id="frepw"><label>Repetir<select id="frep"><option value="">No se repite</option><option value="daily">Todos los días</option><option value="weekly">Cada semana</option><option value="days">Días concretos</option><option value="monthly">Cada mes</option></select></label>
@@ -195,7 +195,7 @@ dialog::backdrop{background:#0008}
   <p class="mut" style="margin:10px 0 4px">Días (puedes marcar varios)</p><div class="wd" id="xdays"></div>
   <div class="row2"><label>Responsable<select id="xresp"></select></label><label>Semanas<select id="xwk"><option value="">Todas las semanas</option><option value="A">Solo semanas A</option><option value="B">Solo semanas B</option></select></label></div>
   <p class="mut" id="xwkinfo"></p>
-  <div class="row2"><label>Inicio<input type="time" id="xtime" required></label><label>Duración (min)<input type="number" id="xdur" min="5" max="1440" step="5" value="60"></label></div>
+  <div class="row2"><label>Hora de inicio<input type="time" id="xtime" required></label><label>Hora final<input type="time" id="xend" required></label></div>
   <label>Categoría<select id="xcat"></select></label>
   <div class="acts"><button type="submit" class="main">Guardar</button><button type="button" id="xdel" class="bad">Quitar</button><span class="sp"></span><button type="button" id="xcancel">Cerrar</button></div>
 </form></dialog>
@@ -354,7 +354,8 @@ function render(){
       <button class="add" data-add="${d}">+ Añadir</button></section>`}).join('');
 }
 const mn=t=>{const[h,m]=t.split(':');return +h*60+ +m},topPx=x=>(Math.max(x,H0*60)-H0*60)*PH/60;
-function fxl(b){return`<div class="fxl" data-fx="${b.id}"><i class="dot" style="--c:${R[b.responsible].c}"></i>↻ ${b.start_time.slice(0,5)} ${esc(b.title)} · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`}
+const durOf=(a,b)=>a&&b?mn(b)-mn(a):NaN,addMin=(t,m)=>{const x=Math.min(1439,mn(t)+m);return pad(Math.floor(x/60))+':'+pad(x%60)};
+function fxl(b){return`<div class="fxl" data-fx="${b.id}"><i class="dot" style="--c:${R[b.responsible].c}"></i>↻ ${b.start_time.slice(0,5)}–${addMin(b.start_time.slice(0,5),b.duration_min)} ${esc(b.title)} · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`}
 function grid(ts,fx){
   const inr=t=>t.start_time&&mn(t.start_time)>=H0*60&&mn(t.start_time)<H1*60,nt=ts.filter(t=>!inr(t)),tt=ts.filter(inr);
   const fb=fx.map(b=>({b,s:mn(b.start_time),e:mn(b.start_time)+b.duration_min})),lanes=[];
@@ -365,12 +366,12 @@ function grid(ts,fx){
   <div class="gb" data-grid="1" style="height:${(H1-H0)*PH}px">${hrs}
   ${fb.map(({b,s})=>`<div class="fb" data-fx="${b.id}" tabindex="0" style="--rc:${R[b.responsible].c};top:${topPx(s)}px;height:${Math.max(b.duration_min*PH/60,22)}px"><b>↻ ${esc(b.title)}</b> · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`).join('')}
   ${ev.map(x=>{const t=x.t,r=R[t.responsible],done=t.status==='completada',off=fb.some(f=>f.s<x.e&&f.e>x.s)?34:0,w=(100-off)/lanes.length;
-    return`<div class="tb ${done?'done':''}" data-id="${t.id}" draggable="true" tabindex="0" style="--rc:${r.c};top:${topPx(x.s)}px;height:${Math.max(t.duration_min*PH/60,26)}px;left:calc(${off+x.l*w}% + 1px);width:calc(${w}% - 2px)"><button class="chk2" data-chk="${t.id}" aria-label="${done?'Reabrir':'Completar'}: ${esc(t.title)}">${done?'✓':''}</button><b>${esc(t.title)}</b><small>${t.start_time.slice(0,5)} · ${r.n} · ${PRI[t.priority][0]}</small></div>`}).join('')}</div>`}
+    return`<div class="tb ${done?'done':''}" data-id="${t.id}" draggable="true" tabindex="0" style="--rc:${r.c};top:${topPx(x.s)}px;height:${Math.max(t.duration_min*PH/60,26)}px;left:calc(${off+x.l*w}% + 1px);width:calc(${w}% - 2px)"><button class="chk2" data-chk="${t.id}" aria-label="${done?'Reabrir':'Completar'}: ${esc(t.title)}">${done?'✓':''}</button><b>${esc(t.title)}</b><small>${t.start_time.slice(0,5)}–${addMin(t.start_time.slice(0,5),t.duration_min)} · ${r.n} · ${PRI[t.priority][0]}</small></div>`}).join('')}</div>`}
 function card(t){const r=R[t.responsible],done=t.status==='completada';
   return`<article class="task ${done?'done':''}" style="--rc:${r.c}" draggable="true" data-id="${t.id}" tabindex="0">
     <div class="top"><button class="chk" data-chk="${t.id}" aria-label="${done?'Reabrir':'Completar'}: ${esc(t.title)}">${done?'✓':''}</button><span class="tt">${esc(t.title)}</span></div>
     <div class="meta"><span class="chip" style="--c:${r.c}"><i class="dot"></i>${r.n}</span><span class="pri p-${t.priority}">${PRI[t.priority]}</span>
-    ${t.start_time?'<span>'+t.start_time.slice(0,5)+'</span>':''}<span>${fm(t.duration_min)}</span><span>${esc(t.category)}</span>${t.series_id?'<span title="Repetitiva">↻</span>':''}</div></article>`}
+    ${t.start_time?'<span>'+t.start_time.slice(0,5)+'–'+addMin(t.start_time.slice(0,5),t.duration_min)+'</span>':''}<span>${fm(t.duration_min)}</span><span>${esc(t.category)}</span>${t.series_id?'<span title="Repetitiva">↻</span>':''}</div></article>`}
 
 /* ───── Eventos de la pantalla principal ───── */
 const go=n=>{S.ws=ad(S.ws,n*7);render();ensure()};
@@ -419,24 +420,24 @@ function openTask(id,date,time){
   const t=id?S.tasks.find(x=>x.id===id):null;S.edit=t;fillCats(t?.category||'Otros');
   F('dt').textContent=t?'Editar tarea':'Nueva tarea';
   F('ftitle').value=t?.title||'';F('fdesc').value=t?.description||'';F('fdate').value=t?.date||date;F('ftime').value=t?.start_time?.slice(0,5)||time||'';
-  F('fdur').value=t?.duration_min||30;F('fresp').value=t?.responsible||(S.mem.find(m=>m.user_id===S.user.id)?.slot||'ambos');F('fpri').value=t?.priority||'media';
+  F('fend').value=t?.start_time?addMin(t.start_time.slice(0,5),t.duration_min):(time?addMin(time,30):'');F('fresp').value=t?.responsible||(S.mem.find(m=>m.user_id===S.user.id)?.slot||'ambos');F('fpri').value=t?.priority||'media';
   F('frepw').hidden=!!t;F('frep').value='';F('fdays').hidden=true;F('fscopel').hidden=!t?.series_id;F('fscope').value='this';
   F('fdup').hidden=F('fdel').hidden=F('fdone').hidden=!t;if(t)F('fdone').textContent=t.status==='completada'?'Reabrir':'Marcar completada';
   F('finfo').textContent=t?`Creada por ${who(t.created_by)} el ${new Date(t.created_at).toLocaleString('es')}. Última modificación por ${who(t.updated_by)} el ${new Date(t.updated_at).toLocaleString('es')}.`:'';
   warnLoad();$('#dlg').showModal();F('ftitle').focus()}
-function warnLoad(){const d=F('fdate').value,x=+F('fdur').value||0;if(!d)return;
+function warnLoad(){const d=F('fdate').value,x=durOf(F('ftime').value,F('fend').value)||0;if(!d)return;
   const m=dayMin(d)-(S.edit&&S.edit.date===d?S.edit.duration_min:0)+x,c=cap();
   F('fwarn').textContent=m>c?`⚠ Ese día quedará sobrecargado: ${fm(m-c)} de más (puedes guardar igualmente).`:m>=c*.8?`Ese día llegará al ${Math.round(m*100/c)} % de la capacidad.`:''}
-F('fdate').onchange=F('fdur').oninput=warnLoad;F('fcancel').onclick=()=>$('#dlg').close();
+F('fdate').onchange=F('ftime').onchange=F('fend').onchange=warnLoad;F('fcancel').onclick=()=>$('#dlg').close();
 function readForm(){return{title:F('ftitle').value.trim(),description:F('fdesc').value.trim()||null,date:F('fdate').value,start_time:F('ftime').value||null,
-  duration_min:parseInt(F('fdur').value,10),responsible:F('fresp').value,priority:F('fpri').value,category:F('fcat').value}}
+  duration_min:durOf(F('ftime').value,F('fend').value),responsible:F('fresp').value,priority:F('fpri').value,category:F('fcat').value}}
 function validate(v){
   if(!v.title||v.title.length>120)return'El título es obligatorio (máximo 120 caracteres).';
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v.date||''))return'Elige una fecha.';
-  if(!(v.duration_min>=5&&v.duration_min<=1440))return'La duración debe estar entre 5 y 1440 minutos.';
+  if(!(v.duration_min>=5&&v.duration_min<=1440))return'La hora final debe ser posterior a la de inicio (mínimo 5 minutos).';
   if(!R[v.responsible])return'Elige un responsable.';if(!(v.priority in PO))return'Elige una prioridad.';return''}
 $('#tf').onsubmit=async e=>{
-  e.preventDefault();const v=readForm(),err=validate(v);if(err)return toast(err);
+  e.preventDefault();const v=readForm();if(!v.start_time||!F('fend').value)return toast('Pon la hora de inicio y la hora final.');const err=validate(v);if(err)return toast(err);
   const t=S.edit;
   try{
     if(!t){
@@ -476,13 +477,13 @@ F('xdays').innerHTML=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'
 F('xresp').innerHTML=F('fresp').innerHTML;
 function openFx(id){const b=id?S.fx.find(x=>x.id===id):null;FX=b;
   F('xcat').innerHTML=S.fam.categories.map(c=>`<option ${c===(b?.category||'Casa')?'selected':''}>${esc(c)}</option>`).join('');
-  F('xtitle').value=b?.title||'';F('xdays').querySelectorAll('input').forEach(i=>i.checked=+i.value===(b?.weekday||dow(pd(S.sel))));F('xwk').value=b?.week_type||'';F('xwkinfo').textContent=`La semana que estás viendo es la semana ${wtype(S.ws)}. Las semanas A y B se alternan una tras otra.`;F('xtime').value=b?.start_time?.slice(0,5)||'09:00';F('xdur').value=b?.duration_min||60;
+  F('xtitle').value=b?.title||'';F('xdays').querySelectorAll('input').forEach(i=>i.checked=+i.value===(b?.weekday||dow(pd(S.sel))));F('xwk').value=b?.week_type||'';F('xwkinfo').textContent=`La semana que estás viendo es la semana ${wtype(S.ws)}. Las semanas A y B se alternan una tras otra.`;F('xtime').value=b?.start_time?.slice(0,5)||'09:00';F('xend').value=b?addMin(b.start_time.slice(0,5),b.duration_min):'10:00';
   F('xresp').value=b?.responsible||'ambos';F('xdel').hidden=!b;$('#dfx').showModal()}
 $('#newfx').onclick=()=>openFx(null);F('xcancel').onclick=()=>$('#dfx').close();
 $('#fxf').onsubmit=async e=>{e.preventDefault();
   const days=[...F('xdays').querySelectorAll('input:checked')].map(i=>+i.value);
-  const v={title:F('xtitle').value.trim(),start_time:F('xtime').value,duration_min:parseInt(F('xdur').value,10),responsible:F('xresp').value,category:F('xcat').value,week_type:F('xwk').value||null};
-  if(!v.title||!v.start_time||!(v.duration_min>=5&&v.duration_min<=1440)||!R[v.responsible])return toast('Revisa título, hora y duración.');
+  const v={title:F('xtitle').value.trim(),start_time:F('xtime').value,duration_min:durOf(F('xtime').value,F('xend').value),responsible:F('xresp').value,category:F('xcat').value,week_type:F('xwk').value||null};
+  if(!v.title||!v.start_time||!(v.duration_min>=5&&v.duration_min<=1440)||!R[v.responsible])return toast('Revisa el título y que la hora final sea posterior a la de inicio.');
   if(!days.length)return toast('Marca al menos un día.');
   if(FX&&days.length>1)return toast('Al editar un bloque, marca un solo día.');
   try{await run(FX?sb.from('fixed_blocks').update({...v,weekday:days[0]}).eq('id',FX.id):sb.from('fixed_blocks').insert(days.map(w=>({...v,weekday:w,family_id:S.fam.id,created_by:S.user.id}))));await fetchFx();$('#dfx').close()}catch(_){}};
