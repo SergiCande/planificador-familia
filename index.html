@@ -190,14 +190,15 @@ dialog::backdrop{background:#0008}
   <div class="acts"><button id="bout" class="bad">Cerrar sesión</button><span class="sp"></span><button id="sclose" class="main">Cerrar</button></div>
 </dialog>
 <dialog id="dfx"><form id="fxf" novalidate>
-  <h2>Horario fijo semanal</h2><p class="mut">Se repite todas las semanas, de fondo. Lo puntual se añade encima como tareas.</p>
+  <h2>Horario fijo semanal</h2><p class="mut">Se repite todas las semanas, de fondo. Lo puntual se añade encima como tareas. Para cambiar o quitar un solo día, toca el bloque en ese día y elige «Solo este día».</p>
+  <label id="xscopel" hidden>Aplicar cambios a<select id="xscope"><option value="all">Todas las semanas</option><option value="day">Solo este día</option></select></label>
   <label>Título<input id="xtitle" maxlength="120" required></label>
-  <p class="mut" style="margin:10px 0 4px">Días (puedes marcar varios)</p><div class="wd" id="xdays"></div>
+  <div id="xdaysw"><p class="mut" style="margin:10px 0 4px">Días (puedes marcar varios)</p><div class="wd" id="xdays"></div></div>
   <div class="row2"><label>Responsable<select id="xresp"></select></label><label>Semanas<select id="xwk"><option value="">Todas las semanas</option><option value="A">Solo semanas A</option><option value="B">Solo semanas B</option></select></label></div>
   <p class="mut" id="xwkinfo"></p>
   <div class="row2"><label>Hora de inicio<input type="time" id="xtime" required></label><label>Hora final<input type="time" id="xend" required></label></div>
   <label>Categoría<select id="xcat"></select></label>
-  <div class="acts"><button type="submit" class="main">Guardar</button><button type="button" id="xdel" class="bad">Quitar</button><span class="sp"></span><button type="button" id="xcancel">Cerrar</button></div>
+  <div class="acts"><button type="submit" class="main">Guardar</button><button type="button" id="xrestore" hidden>Volver al horario normal</button><button type="button" id="xdel" class="bad">Quitar</button><span class="sp"></span><button type="button" id="xcancel">Cerrar</button></div>
 </form></dialog>
 <div id="toast" role="status" hidden></div>
 
@@ -217,7 +218,7 @@ const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const pd=s=>new Date(s+'T00:00:00'),ad=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
 const mon=d=>ad(d,-((d.getDay()+6)%7)),dow=d=>((d.getDay()+6)%7)+1;
 const fm=m=>{const h=Math.floor(m/60),r=Math.round(m%60);return h?(r?`${h} h ${r} min`:`${h} h`):`${r} min`};
-const S={ws:mon(new Date()),tasks:[],series:[],fx:[],mem:[],fam:null,user:null,f:{r:'',p:'',c:'',s:'',q:'',o:'hora'},list:false,sm:'g',sel:ymd(new Date()),edit:null};
+const S={ws:mon(new Date()),tasks:[],series:[],fx:[],ov:[],mem:[],fam:null,user:null,f:{r:'',p:'',c:'',s:'',q:'',o:'hora'},list:false,sm:'g',sel:ymd(new Date()),edit:null};
 let sb=null,chan=null;
 
 /* ───── Estado de sincronización y avisos ───── */
@@ -267,12 +268,13 @@ $('#bjoin').onclick=()=>famCall('join_family',{p_code:$('#code').value,p_slot:$(
 
 /* ───── Datos y tiempo real ───── */
 async function fetchAll(){
-  const [f,m,t,s,x]=await Promise.all([sb.from('families').select('*').single(),sb.from('family_members').select('*'),
-    sb.from('tasks').select('*').order('date').limit(5000),sb.from('series').select('*'),sb.from('fixed_blocks').select('*')]);
+  const [f,m,t,s,x,o]=await Promise.all([sb.from('families').select('*').single(),sb.from('family_members').select('*'),
+    sb.from('tasks').select('*').order('date').limit(5000),sb.from('series').select('*'),sb.from('fixed_blocks').select('*'),sb.from('fixed_overrides').select('*')]);
   const err=f.error||m.error||t.error||s.error||x.error;if(err){setSync('error',err.message);return}
-  S.fam=f.data;S.mem=m.data;S.tasks=t.data;S.series=s.data;S.fx=x.data;await ensure();render();setSync('saved');
+  S.fam=f.data;S.mem=m.data;S.tasks=t.data;S.series=s.data;S.fx=x.data;S.ov=o.data||[];await ensure();render();setSync('saved');
 }
 async function fetchFx(){const r=await sb.from('fixed_blocks').select('*');if(!r.error){S.fx=r.data;render()}}
+async function fetchOv(){const r=await sb.from('fixed_overrides').select('*');if(!r.error){S.ov=r.data;render()}}
 async function fetchTasks(){const r=await sb.from('tasks').select('*').order('date').limit(5000);if(!r.error){S.tasks=r.data;render()}}
 function upsertLocal(t){const i=S.tasks.findIndex(x=>x.id===t.id);if(i<0)S.tasks.push(t);else if(t.version>=S.tasks[i].version)S.tasks[i]=t}
 function subscribe(){
@@ -280,7 +282,7 @@ function subscribe(){
   chan=sb.channel('familia').on('postgres_changes',{event:'*',schema:'public',table:'tasks'},p=>{
     if(p.eventType==='DELETE')S.tasks=S.tasks.filter(t=>t.id!==p.old.id);else if(p.new.family_id===S.fam.id)upsertLocal(p.new);
     render();setSync('saved')
-  }).on('postgres_changes',{event:'*',schema:'public',table:'fixed_blocks'},()=>fetchFx()).on('postgres_changes',{event:'*',schema:'public',table:'series'},p=>{if(p.eventType!=='DELETE')S.series=[...S.series.filter(s=>s.id!==p.new.id),p.new]})
+  }).on('postgres_changes',{event:'*',schema:'public',table:'fixed_blocks'},()=>fetchFx()).on('postgres_changes',{event:'*',schema:'public',table:'fixed_overrides'},()=>fetchOv()).on('postgres_changes',{event:'*',schema:'public',table:'series'},p=>{if(p.eventType!=='DELETE')S.series=[...S.series.filter(s=>s.id!==p.new.id),p.new]})
   .subscribe(st=>{if(st==='SUBSCRIBED')setSync('saved');else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(st))setSync('error','Sin sincronización en vivo')});
 }
 const who=id=>S.mem.find(m=>m.user_id===id)?.display_name||'alguien';
@@ -311,7 +313,7 @@ const wd=()=>[...Array(7)].map((_,i)=>ymd(ad(S.ws,i)));
 const cap=()=>S.fam.capacity_minutes;
 const isoWeek=d=>{const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())),n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);return Math.ceil(((t-new Date(Date.UTC(t.getUTCFullYear(),0,1)))/864e5+1)/7)};
 const wtype=d=>isoWeek(d)%2?'A':'B';
-const fxOf=d=>S.fx.filter(b=>b.weekday===dow(pd(d))&&(!b.week_type||b.week_type===wtype(pd(d)))).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+const fxOf=d=>S.fx.filter(b=>b.weekday===dow(pd(d))&&(!b.week_type||b.week_type===wtype(pd(d)))).map(b=>{const o=S.ov.find(o=>o.block_id===b.id&&o.date===d);return o?(o.cancelled?null:{...b,title:o.title,start_time:o.start_time,duration_min:o.duration_min,responsible:o.responsible,category:o.category,ov:true}):b}).filter(Boolean).sort((a,b)=>a.start_time.localeCompare(b.start_time));
 const affects=(r,p)=>r===p||r==='ambos'||r==='familiar';
 const pm=(d,p)=>S.tasks.filter(t=>t.date===d&&affects(t.responsible,p)).reduce((a,t)=>a+t.duration_min,0)+fxOf(d).filter(b=>affects(b.responsible,p)).reduce((a,b)=>a+b.duration_min,0);
 const dayMin=d=>S.tasks.filter(t=>t.date===d).reduce((a,t)=>a+t.duration_min,0)+fxOf(d).reduce((a,b)=>a+b.duration_min,0); // cada tarea una sola vez; completadas cuentan
@@ -352,11 +354,12 @@ function render(){
     return`<section class="day ${d===S.sel?'sel':''} ${d===td?'today':''}" data-d="${d}" aria-label="${DN[i]} ${pd(d).getDate()}">
       <h3>${DN[i]} ${pd(d).getDate()}</h3><div class="mut">${all.length} tareas</div>${bars}
       ${S.list?fx.map(fxl).join('')+(ts.map(card).join('')||'<p class="mut">Sin tareas</p>'):grid(ts,fx)}
+      ${S.ov.filter(o=>o.date===d&&o.cancelled).map(o=>`<div class="mut">Quitado este día: ${esc(o.title)} <button data-fxr="${o.id}" style="min-height:32px">Restaurar</button></div>`).join('')}
       <button class="add" data-add="${d}">+ Añadir</button></section>`}).join('');
 }
 const mn=t=>{const[h,m]=t.split(':');return +h*60+ +m},topPx=x=>(Math.max(x,H0*60)-H0*60)*PH/60;
 const durOf=(a,b)=>a&&b?mn(b)-mn(a):NaN,addMin=(t,m)=>{const x=Math.min(1439,mn(t)+m);return pad(Math.floor(x/60))+':'+pad(x%60)};
-function fxl(b){return`<div class="fxl" data-fx="${b.id}"><i class="dot" style="--c:${R[b.responsible].c}"></i>↻ ${b.start_time.slice(0,5)}–${addMin(b.start_time.slice(0,5),b.duration_min)} ${esc(b.title)} · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`}
+function fxl(b){return`<div class="fxl" data-fx="${b.id}"><i class="dot" style="--c:${R[b.responsible].c}"></i>${b.ov?'✎':'↻'} ${b.start_time.slice(0,5)}–${addMin(b.start_time.slice(0,5),b.duration_min)} ${esc(b.title)} · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`}
 function grid(ts,fx){
   const inr=t=>t.start_time&&mn(t.start_time)>=H0*60&&mn(t.start_time)<H1*60,nt=ts.filter(t=>!inr(t)),tt=ts.filter(inr);
   const fb=fx.map(b=>({b,s:mn(b.start_time),e:mn(b.start_time)+b.duration_min})),lanes=[];
@@ -365,7 +368,7 @@ function grid(ts,fx){
   const hrs=[...Array(H1-H0)].map((_,k)=>`<span class="hl" style="top:${k*PH}px">${pad(H0+k)}</span>`).join('');
   return`${nt.length?`<div class="nohr"><span class="mut">Sin hora fija</span>${nt.map(card).join('')}</div>`:''}
   <div class="gb" data-grid="1" style="height:${(H1-H0)*PH}px">${hrs}
-  ${fb.map(({b,s})=>`<div class="fb" data-fx="${b.id}" tabindex="0" style="--rc:${R[b.responsible].c};top:${topPx(s)}px;height:${Math.max(b.duration_min*PH/60,22)}px"><b>↻ ${esc(b.title)}</b> · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`).join('')}
+  ${fb.map(({b,s})=>`<div class="fb" data-fx="${b.id}" tabindex="0" style="--rc:${R[b.responsible].c};top:${topPx(s)}px;height:${Math.max(b.duration_min*PH/60,22)}px"><b>${b.ov?'✎':'↻'} ${esc(b.title)}</b> · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`).join('')}
   ${ev.map(x=>{const t=x.t,r=R[t.responsible],done=t.status==='completada',off=fb.some(f=>f.s<x.e&&f.e>x.s)?34:0,w=(100-off)/lanes.length;
     return`<div class="tb ${done?'done':''}" data-id="${t.id}" draggable="true" tabindex="0" style="--rc:${r.c};top:${topPx(x.s)}px;height:${Math.max(t.duration_min*PH/60,26)}px;left:calc(${off+x.l*w}% + 1px);width:calc(${w}% - 2px)"><button class="chk2" data-chk="${t.id}" aria-label="${done?'Reabrir':'Completar'}: ${esc(t.title)}">${done?'✓':''}</button><b>${esc(t.title)}</b><small>${t.start_time.slice(0,5)}–${addMin(t.start_time.slice(0,5),t.duration_min)} · ${r.n} · ${PRI[t.priority][0]}</small></div>`}).join('')}</div>`}
 function card(t){const r=R[t.responsible],done=t.status==='completada';
@@ -387,8 +390,9 @@ $('#fq').oninput=e=>{S.f.q=e.target.value;render()};
 $('#dtabs').onclick=e=>{const b=e.target.closest('[data-d]');if(b){S.sel=b.dataset.d;render()}};
 $('#days').onclick=e=>{
   const c=e.target.closest('[data-chk]');if(c){e.stopPropagation();return toggle(c.dataset.chk)}
+  const fr=e.target.closest('[data-fxr]');if(fr)return run(sb.from('fixed_overrides').delete().eq('id',fr.dataset.fxr)).then(fetchOv).catch(()=>{});
   const a=e.target.closest('[data-add]');if(a)return openTask(null,a.dataset.add);
-  const t=e.target.closest('[data-id]');if(t)return openTask(t.dataset.id);const x=e.target.closest('[data-fx]');if(x)return openFx(x.dataset.fx);
+  const t=e.target.closest('[data-id]');if(t)return openTask(t.dataset.id);const x=e.target.closest('[data-fx]');if(x)return openFx(x.dataset.fx,x.closest('.day')?.dataset.d);
   const g=e.target.closest('[data-grid]');if(g){const y=e.clientY-g.getBoundingClientRect().top,mm=Math.round((y/PH*60+H0*60)/30)*30;openTask(null,g.closest('.day').dataset.d,`${pad(Math.min(23,Math.floor(mm/60)))}:${pad(mm%60)}`)}};
 $('#days').onkeydown=e=>{if(e.key==='Enter'&&e.target.dataset.id)openTask(e.target.dataset.id)};
 $('#days').ondragstart=e=>{const t=e.target.closest('[data-id]');if(t)e.dataTransfer.setData('text/plain',t.dataset.id)};
@@ -475,22 +479,40 @@ F('fdel').onclick=async()=>{const t=S.edit,scope=t.series_id?F('fscope').value:'
 
 
 /* ───── Horario fijo semanal ───── */
-let FX=null;
+let FX=null,FXD=null;
 F('xdays').innerHTML=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((n,i)=>`<label><input type="checkbox" value="${i+1}">${n}</label>`).join('');
 F('xresp').innerHTML=F('fresp').innerHTML;
-function openFx(id){const b=id?S.fx.find(x=>x.id===id):null;FX=b;
-  F('xcat').innerHTML=S.fam.categories.map(c=>`<option ${c===(b?.category||'Casa')?'selected':''}>${esc(c)}</option>`).join('');
-  F('xtitle').value=b?.title||'';F('xdays').querySelectorAll('input').forEach(i=>i.checked=+i.value===(b?.weekday||dow(pd(S.sel))));F('xwk').value=b?.week_type||'';F('xwkinfo').textContent=`La semana que estás viendo es la semana ${wtype(S.ws)}. Las semanas A y B se alternan una tras otra.`;F('xtime').value=b?.start_time?.slice(0,5)||'09:00';F('xend').value=b?addMin(b.start_time.slice(0,5),b.duration_min):'10:00';
-  F('xresp').value=b?.responsible||'ambos';F('xdel').hidden=!b;$('#dfx').showModal()}
+function fillFx(b){F('xcat').innerHTML=S.fam.categories.map(c=>`<option ${c===(b?.category||'Casa')?'selected':''}>${esc(c)}</option>`).join('');
+  F('xtitle').value=b?.title||'';F('xtime').value=b?.start_time?.slice(0,5)||'09:00';F('xend').value=b?addMin(b.start_time.slice(0,5),b.duration_min):'10:00';F('xresp').value=b?.responsible||'ambos'}
+function syncFx(){const day=!!FX&&F('xscope').value==='day';F('xdaysw').hidden=day;F('xwk').parentElement.hidden=day;F('xwkinfo').hidden=day;
+  F('xrestore').hidden=!(day&&S.ov.some(o=>o.block_id===FX.id&&o.date===FXD));F('xdel').textContent=day?'Quitar solo este día':'Quitar'}
+function openFx(id,date){const b=id?S.fx.find(x=>x.id===id):null;FX=b;FXD=date||null;fillFx(b);
+  F('xdays').querySelectorAll('input').forEach(i=>i.checked=+i.value===(b?.weekday||dow(pd(S.sel))));F('xwk').value=b?.week_type||'';
+  F('xwkinfo').textContent=`La semana que estás viendo es la semana ${wtype(S.ws)}. Las semanas A y B se alternan una tras otra.`;
+  F('xscopel').hidden=!(b&&date);F('xscope').value='all';
+  F('xscope').options[1].textContent='Solo el '+(date?pd(date).toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'}):'día');
+  F('xdel').hidden=!b;syncFx();$('#dfx').showModal()}
+F('xscope').onchange=()=>{const day=F('xscope').value==='day',o=S.ov.find(o=>o.block_id===FX.id&&o.date===FXD&&!o.cancelled);fillFx(day&&o?o:FX);syncFx()};
 $('#newfx').onclick=()=>openFx(null);F('xcancel').onclick=()=>$('#dfx').close();
 $('#fxf').onsubmit=async e=>{e.preventDefault();
-  const days=[...F('xdays').querySelectorAll('input:checked')].map(i=>+i.value);
-  const v={title:F('xtitle').value.trim(),start_time:F('xtime').value,duration_min:durOf(F('xtime').value,F('xend').value),responsible:F('xresp').value,category:F('xcat').value,week_type:F('xwk').value||null};
+  const day=!!FX&&F('xscope').value==='day',days=[...F('xdays').querySelectorAll('input:checked')].map(i=>+i.value);
+  const v={title:F('xtitle').value.trim(),start_time:F('xtime').value,duration_min:durOf(F('xtime').value,F('xend').value),responsible:F('xresp').value,category:F('xcat').value};
   if(!v.title||!v.start_time||!(v.duration_min>=5&&v.duration_min<=1440)||!R[v.responsible])return toast('Revisa el título y que la hora final sea posterior a la de inicio.');
-  if(!days.length)return toast('Marca al menos un día.');
-  if(FX&&days.length>1)return toast('Al editar un bloque, marca un solo día.');
-  try{await run(FX?sb.from('fixed_blocks').update({...v,weekday:days[0]}).eq('id',FX.id):sb.from('fixed_blocks').insert(days.map(w=>({...v,weekday:w,family_id:S.fam.id,created_by:S.user.id}))));await fetchFx();$('#dfx').close()}catch(_){}};
-F('xdel').onclick=async()=>{if(!confirm(`¿Quitar «${FX.title}» del horario fijo? Dejará de aparecer todas las semanas.`))return;
+  try{
+    if(day){await run(sb.from('fixed_overrides').upsert({...v,family_id:S.fam.id,block_id:FX.id,date:FXD,cancelled:false,created_by:S.user.id},{onConflict:'block_id,date'}));await fetchOv()}
+    else{
+      if(!days.length)return toast('Marca al menos un día.');
+      if(FX&&days.length>1)return toast('Al editar un bloque, marca un solo día.');
+      const vv={...v,week_type:F('xwk').value||null};
+      await run(FX?sb.from('fixed_blocks').update({...vv,weekday:days[0]}).eq('id',FX.id):sb.from('fixed_blocks').insert(days.map(w=>({...vv,weekday:w,family_id:S.fam.id,created_by:S.user.id}))));await fetchFx()}
+    $('#dfx').close()}catch(_){}};
+F('xrestore').onclick=async()=>{try{await run(sb.from('fixed_overrides').delete().eq('block_id',FX.id).eq('date',FXD));await fetchOv();$('#dfx').close()}catch(_){}};
+F('xdel').onclick=async()=>{
+  if(F('xscope').value==='day'){
+    if(!confirm(`¿Quitar «${FX.title}» solo el ${pd(FXD).toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'})}? Las demás semanas no cambian.`))return;
+    try{await run(sb.from('fixed_overrides').upsert({family_id:S.fam.id,block_id:FX.id,date:FXD,cancelled:true,title:FX.title,start_time:FX.start_time,duration_min:FX.duration_min,responsible:FX.responsible,category:FX.category,created_by:S.user.id},{onConflict:'block_id,date'}));await fetchOv();$('#dfx').close()}catch(_){}
+    return}
+  if(!confirm(`¿Quitar «${FX.title}» del horario fijo? Dejará de aparecer todas las semanas.`))return;
   try{await run(sb.from('fixed_blocks').delete().eq('id',FX.id));await fetchFx();$('#dfx').close()}catch(_){}};
 
 /* ───── Ajustes, exportación e importación ───── */
