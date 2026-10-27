@@ -55,7 +55,7 @@ td,th{padding:6px 4px;text-align:left;border-bottom:1px solid var(--line)}
 .day.today{border:2px solid var(--ink)}
 .day h3{margin:0;font-size:16px;text-transform:capitalize}
 .load{height:10px;border-radius:5px;background:var(--line);margin:6px 0 2px;overflow:hidden}
-.load i{display:block;height:100%;background:#475569}
+.load i{display:block;height:100%;background:var(--lc,#475569)}.pl{font-size:13px;display:flex;gap:6px;align-items:center;margin-top:6px}
 .load.warn i{background:#CA8A04}.load.over i{background:#B91C1C}
 .alert{font-size:13px;font-weight:600;color:#B91C1C}.alert.w{color:#854D0E}
 .task{--rc:#999;background:#fff;border:1px solid var(--line);border-left:8px solid var(--rc);border-radius:10px;padding:8px 8px 8px 10px;margin-top:8px;cursor:pointer}
@@ -177,7 +177,7 @@ dialog::backdrop{background:#0008}
 
 <dialog id="dset">
   <h2>Ajustes</h2>
-  <label>Capacidad diaria (horas)<input id="scap" type="number" min="1" max="24" step="0.5"></label>
+  <label>Capacidad diaria por persona (horas despierto/a)<input id="scap" type="number" min="1" max="24" step="0.5"></label>
   <div class="acts"><button id="scapb">Guardar capacidad</button></div>
   <h3>Categorías</h3><div class="chips" id="scats"></div>
   <div class="acts"><input id="newcat" placeholder="Nueva categoría" maxlength="40" style="flex:1"><button id="addcat">Añadir</button></div>
@@ -312,6 +312,8 @@ const cap=()=>S.fam.capacity_minutes;
 const isoWeek=d=>{const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())),n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);return Math.ceil(((t-new Date(Date.UTC(t.getUTCFullYear(),0,1)))/864e5+1)/7)};
 const wtype=d=>isoWeek(d)%2?'A':'B';
 const fxOf=d=>S.fx.filter(b=>b.weekday===dow(pd(d))&&(!b.week_type||b.week_type===wtype(pd(d)))).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+const affects=(r,p)=>r===p||r==='ambos'||r==='familiar';
+const pm=(d,p)=>S.tasks.filter(t=>t.date===d&&affects(t.responsible,p)).reduce((a,t)=>a+t.duration_min,0)+fxOf(d).filter(b=>affects(b.responsible,p)).reduce((a,b)=>a+b.duration_min,0);
 const dayMin=d=>S.tasks.filter(t=>t.date===d).reduce((a,t)=>a+t.duration_min,0)+fxOf(d).reduce((a,b)=>a+b.duration_min,0); // cada tarea una sola vez; completadas cuentan
 function visible(t){const f=S.f;
   return(!f.r||t.responsible===f.r)&&(!f.p||t.priority===f.p)&&(!f.c||t.category===f.c)&&(!f.s||t.status===f.s)&&(!f.q||t.title.toLowerCase().includes(f.q.toLowerCase()))}
@@ -331,12 +333,12 @@ function render(){
   /* resumen */
   const sm=ts=>{const o={n:ts.length,d:ts.filter(t=>t.status==='completada').length,m:0,by:{sergi:0,marina:0,ambos:0,familiar:0},cnt:{sergi:0,marina:0,ambos:0,familiar:0},dn:{sergi:0,marina:0,ambos:0,familiar:0}};
     ts.forEach(t=>{o.m+=t.duration_min;o.by[t.responsible]+=t.duration_min;o.cnt[t.responsible]++;if(t.status==='completada')o.dn[t.responsible]++});return o};
-  const a=sm(wt);ds.forEach(d=>fxOf(d).forEach(b=>{a.m+=b.duration_min;a.by[b.responsible]+=b.duration_min}));const free=ds.reduce((x,d)=>x+Math.max(0,cap()-dayMin(d)),0),busy=ds.map(d=>[d,dayMin(d)]).sort((x,y)=>y[1]-x[1])[0];
+  const a=sm(wt);ds.forEach(d=>fxOf(d).forEach(b=>{a.m+=b.duration_min;a.by[b.responsible]+=b.duration_min}));const fr=k=>ds.reduce((x,d)=>x+Math.max(0,cap()-pm(d,k)),0),busy=ds.map(d=>[d,Math.max(pm(d,'sergi'),pm(d,'marina'))]).sort((x,y)=>y[1]-x[1])[0];
   const pct=a.n?Math.round(a.d*100/a.n):0;
   $('#sg').setAttribute('aria-pressed',S.sm==='g');$('#sr').setAttribute('aria-pressed',S.sm==='r');
   const dist=`<div class="dist" role="img" aria-label="Distribución del tiempo por responsable">${Object.keys(R).map(k=>`<i style="width:${a.m?a.by[k]*100/a.m:0}%;background:${R[k].c}"></i>`).join('')}</div>`;
   $('#sumc').innerHTML=S.sm==='g'?`<div class="tiles"><div class="tile"><b>${a.n}</b>tareas</div><div class="tile"><b>${a.n-a.d}</b>pendientes</div><div class="tile"><b>${a.d}</b>completadas</div><div class="tile"><b>${pct} %</b>completado</div>
-    <div class="tile"><b>${fm(a.m)}</b>planificadas</div><div class="tile"><b>${fm(free)}</b>tiempo libre estimado</div><div class="tile"><b>${a.m&&busy[1]?DN[(pd(busy[0]).getDay()+6)%7]:'—'}</b>día con más carga${a.m&&busy[1]?' ('+fm(busy[1])+')':''}</div></div>${dist}
+    <div class="tile"><b>${fm(a.m)}</b>planificadas</div><div class="tile"><b>${fm(fr('sergi'))}</b>libre Sergi (estimado)</div><div class="tile"><b>${fm(fr('marina'))}</b>libre Marina (estimado)</div><div class="tile"><b>${a.m&&busy[1]?DN[(pd(busy[0]).getDay()+6)%7]:'—'}</b>día con más carga${a.m&&busy[1]?' ('+fm(busy[1])+')':''}</div></div>${dist}
     <div class="chips">${Object.keys(R).map(k=>`<span class="chip" style="--c:${R[k].c}"><i class="dot"></i>${R[k].n}: ${fm(a.by[k])}</span>`).join('')}</div>`
     :`${dist}<table><tr><th>Responsable</th><th>Tareas</th><th>Hechas</th><th>Tiempo</th></tr>${Object.keys(R).map(k=>`<tr><td><span class="chip" style="--c:${R[k].c}"><i class="dot"></i>${R[k].n}</span></td><td>${a.cnt[k]}</td><td>${a.dn[k]}</td><td>${fm(a.by[k])}</td></tr>`).join('')}</table>
     <p class="mut">«Ambos» y «Familiar» se cuentan aparte, sin sumarse a ninguna persona ni duplicarse en el total.</p>`;
@@ -344,12 +346,11 @@ function render(){
   if(!ds.includes(S.sel))S.sel=ds.includes(td)?td:ds[0];
   $('#dtabs').innerHTML=ds.map((d,i)=>`<button role="tab" data-d="${d}" aria-selected="${d===S.sel}">${DN[i].slice(0,3)}<br><b>${pd(d).getDate()}</b></button>`).join('');
   $('#days').innerHTML=ds.map((d,i)=>{
-    const m=dayMin(d),c=cap(),p=Math.min(100,m*100/c),over=Math.max(0,m-c),cls=over?'over':m>=c*.8?'warn':'';
+    const c=cap(),bars=['sergi','marina'].map(k=>{const m=pm(d,k),p=Math.min(100,m*100/c),over=Math.max(0,m-c),cls=over?'over':m>=c*.8?'warn':'';
+      return`<div class="pl"><span class="chip" style="--c:${R[k].c}"><i class="dot"></i>${R[k].n}</span> ${fm(m)} / ${fm(c)}</div><div class="load ${cls}" style="--lc:${R[k].c}" role="progressbar" aria-label="Carga de ${R[k].n}" aria-valuenow="${Math.round(p)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${p}%"></i></div>${over?`<div class="alert">⚠ ${R[k].n}: ${fm(over)} de más</div>`:m>=c*.8?`<div class="alert w">${R[k].n}: cerca del límite (${Math.round(m*100/c)} %)</div>`:''}`}).join('');
     const all=S.tasks.filter(t=>t.date===d),ts=sorted(all.filter(visible)),fx=fxOf(d).filter(b=>!S.f.r||b.responsible===S.f.r);
     return`<section class="day ${d===S.sel?'sel':''} ${d===td?'today':''}" data-d="${d}" aria-label="${DN[i]} ${pd(d).getDate()}">
-      <h3>${DN[i]} ${pd(d).getDate()}</h3><div class="mut">${all.length} tareas · ${fm(m)} planificadas · libre ${fm(Math.max(0,c-m))}</div>
-      <div class="load ${cls}" role="progressbar" aria-valuenow="${Math.round(p)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${p}%"></i></div>
-      ${over?`<div class="alert">⚠ Sobrecarga: ${fm(over)} de más</div>`:m>=c*.8?`<div class="alert w">Cerca del límite (${Math.round(m*100/c)} %)</div>`:''}
+      <h3>${DN[i]} ${pd(d).getDate()}</h3><div class="mut">${all.length} tareas</div>${bars}
       ${S.list?fx.map(fxl).join('')+(ts.map(card).join('')||'<p class="mut">Sin tareas</p>'):grid(ts,fx)}
       <button class="add" data-add="${d}">+ Añadir</button></section>`}).join('');
 }
@@ -426,8 +427,10 @@ function openTask(id,date,time){
   F('finfo').textContent=t?`Creada por ${who(t.created_by)} el ${new Date(t.created_at).toLocaleString('es')}. Última modificación por ${who(t.updated_by)} el ${new Date(t.updated_at).toLocaleString('es')}.`:'';
   warnLoad();$('#dlg').showModal();F('ftitle').focus()}
 function warnLoad(){const d=F('fdate').value,x=durOf(F('ftime').value,F('fend').value)||0;if(!d)return;
-  const m=dayMin(d)-(S.edit&&S.edit.date===d?S.edit.duration_min:0)+x,c=cap();
-  F('fwarn').textContent=m>c?`⚠ Ese día quedará sobrecargado: ${fm(m-c)} de más (puedes guardar igualmente).`:m>=c*.8?`Ese día llegará al ${Math.round(m*100/c)} % de la capacidad.`:''}
+  const r=F('fresp').value,who=r==='sergi'||r==='marina'?[r]:['sergi','marina'],c=cap(),out=[];
+  who.forEach(k=>{const e=S.edit,m=pm(d,k)-(e&&e.date===d&&affects(e.responsible,k)?e.duration_min:0)+x;
+    if(m>c)out.push(`⚠ ${R[k].n} superará su capacidad ese día: ${fm(m-c)} de más (puedes guardar igualmente).`);else if(m>=c*.8)out.push(`${R[k].n} llegará al ${Math.round(m*100/c)} % de su capacidad.`)});
+  F('fwarn').textContent=out.join(' ')}
 F('fdate').onchange=F('ftime').onchange=F('fend').onchange=warnLoad;F('fcancel').onclick=()=>$('#dlg').close();
 function readForm(){return{title:F('ftitle').value.trim(),description:F('fdesc').value.trim()||null,date:F('fdate').value,start_time:F('ftime').value||null,
   duration_min:durOf(F('ftime').value,F('fend').value),responsible:F('fresp').value,priority:F('fpri').value,category:F('fcat').value}}
