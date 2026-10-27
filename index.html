@@ -192,7 +192,9 @@ dialog::backdrop{background:#0008}
 <dialog id="dfx"><form id="fxf" novalidate>
   <h2>Horario fijo semanal</h2><p class="mut">Se repite todas las semanas, de fondo. Lo puntual se añade encima como tareas.</p>
   <label>Título<input id="xtitle" maxlength="120" required></label>
-  <div class="row2"><label>Día<select id="xday"></select></label><label>Responsable<select id="xresp"></select></label></div>
+  <p class="mut" style="margin:10px 0 4px">Días (puedes marcar varios)</p><div class="wd" id="xdays"></div>
+  <div class="row2"><label>Responsable<select id="xresp"></select></label><label>Semanas<select id="xwk"><option value="">Todas las semanas</option><option value="A">Solo semanas A</option><option value="B">Solo semanas B</option></select></label></div>
+  <p class="mut" id="xwkinfo"></p>
   <div class="row2"><label>Inicio<input type="time" id="xtime" required></label><label>Duración (min)<input type="number" id="xdur" min="5" max="1440" step="5" value="60"></label></div>
   <label>Categoría<select id="xcat"></select></label>
   <div class="acts"><button type="submit" class="main">Guardar</button><button type="button" id="xdel" class="bad">Quitar</button><span class="sp"></span><button type="button" id="xcancel">Cerrar</button></div>
@@ -307,7 +309,9 @@ async function ensure(){
 /* ───── Cálculos ───── */
 const wd=()=>[...Array(7)].map((_,i)=>ymd(ad(S.ws,i)));
 const cap=()=>S.fam.capacity_minutes;
-const fxOf=d=>S.fx.filter(b=>b.weekday===dow(pd(d))).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+const isoWeek=d=>{const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())),n=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-n);return Math.ceil(((t-new Date(Date.UTC(t.getUTCFullYear(),0,1)))/864e5+1)/7)};
+const wtype=d=>isoWeek(d)%2?'A':'B';
+const fxOf=d=>S.fx.filter(b=>b.weekday===dow(pd(d))&&(!b.week_type||b.week_type===wtype(pd(d)))).sort((a,b)=>a.start_time.localeCompare(b.start_time));
 const dayMin=d=>S.tasks.filter(t=>t.date===d).reduce((a,t)=>a+t.duration_min,0)+fxOf(d).reduce((a,b)=>a+b.duration_min,0); // cada tarea una sola vez; completadas cuentan
 function visible(t){const f=S.f;
   return(!f.r||t.responsible===f.r)&&(!f.p||t.priority===f.p)&&(!f.c||t.category===f.c)&&(!f.s||t.status===f.s)&&(!f.q||t.title.toLowerCase().includes(f.q.toLowerCase()))}
@@ -317,6 +321,7 @@ function sorted(ts){return[...ts].sort((a,b)=>(S.f.o==='prioridad'?PO[a.priority
 function render(){
   if(!S.fam)return;const ds=wd(),cats=S.fam.categories,td=ymd(new Date());
   $('#wk').textContent=`${pd(ds[0]).toLocaleDateString('es',{day:'numeric',month:'short'})} – ${pd(ds[6]).toLocaleDateString('es',{day:'numeric',month:'short',year:'numeric'})}`;
+  $('#wk').textContent+=' · Semana '+wtype(S.ws);
   $('#rf').innerHTML=[['','Todas',null],...Object.entries(R).map(([k,v])=>[k,v.n,v.c])].map(([k,n,c])=>
     `<button class="chip" data-r="${k}" aria-pressed="${S.f.r===k}" ${c?`style="--c:${c}"`:''}>${c?'<i class="dot"></i>':''}${n}</button>`).join('');
   $('#fc').innerHTML='<option value="">Todas</option>'+cats.map(c=>`<option ${S.f.c===c?'selected':''}>${esc(c)}</option>`).join('');
@@ -349,7 +354,7 @@ function render(){
       <button class="add" data-add="${d}">+ Añadir</button></section>`}).join('');
 }
 const mn=t=>{const[h,m]=t.split(':');return +h*60+ +m},topPx=x=>(Math.max(x,H0*60)-H0*60)*PH/60;
-function fxl(b){return`<div class="fxl" data-fx="${b.id}"><i class="dot" style="--c:${R[b.responsible].c}"></i>↻ ${b.start_time.slice(0,5)} ${esc(b.title)} · ${R[b.responsible].n}</div>`}
+function fxl(b){return`<div class="fxl" data-fx="${b.id}"><i class="dot" style="--c:${R[b.responsible].c}"></i>↻ ${b.start_time.slice(0,5)} ${esc(b.title)} · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`}
 function grid(ts,fx){
   const inr=t=>t.start_time&&mn(t.start_time)>=H0*60&&mn(t.start_time)<H1*60,nt=ts.filter(t=>!inr(t)),tt=ts.filter(inr);
   const fb=fx.map(b=>({b,s:mn(b.start_time),e:mn(b.start_time)+b.duration_min})),lanes=[];
@@ -358,7 +363,7 @@ function grid(ts,fx){
   const hrs=[...Array(H1-H0)].map((_,k)=>`<span class="hl" style="top:${k*PH}px">${pad(H0+k)}</span>`).join('');
   return`${nt.length?`<div class="nohr"><span class="mut">Sin hora fija</span>${nt.map(card).join('')}</div>`:''}
   <div class="gb" data-grid="1" style="height:${(H1-H0)*PH}px">${hrs}
-  ${fb.map(({b,s})=>`<div class="fb" data-fx="${b.id}" tabindex="0" style="--rc:${R[b.responsible].c};top:${topPx(s)}px;height:${Math.max(b.duration_min*PH/60,22)}px"><b>↻ ${esc(b.title)}</b> · ${R[b.responsible].n}</div>`).join('')}
+  ${fb.map(({b,s})=>`<div class="fb" data-fx="${b.id}" tabindex="0" style="--rc:${R[b.responsible].c};top:${topPx(s)}px;height:${Math.max(b.duration_min*PH/60,22)}px"><b>↻ ${esc(b.title)}</b> · ${R[b.responsible].n}${b.week_type?' · sem. '+b.week_type:''}</div>`).join('')}
   ${ev.map(x=>{const t=x.t,r=R[t.responsible],done=t.status==='completada',off=fb.some(f=>f.s<x.e&&f.e>x.s)?34:0,w=(100-off)/lanes.length;
     return`<div class="tb ${done?'done':''}" data-id="${t.id}" draggable="true" tabindex="0" style="--rc:${r.c};top:${topPx(x.s)}px;height:${Math.max(t.duration_min*PH/60,26)}px;left:calc(${off+x.l*w}% + 1px);width:calc(${w}% - 2px)"><button class="chk2" data-chk="${t.id}" aria-label="${done?'Reabrir':'Completar'}: ${esc(t.title)}">${done?'✓':''}</button><b>${esc(t.title)}</b><small>${t.start_time.slice(0,5)} · ${r.n} · ${PRI[t.priority][0]}</small></div>`}).join('')}</div>`}
 function card(t){const r=R[t.responsible],done=t.status==='completada';
@@ -467,17 +472,20 @@ F('fdel').onclick=async()=>{const t=S.edit,scope=t.series_id?F('fscope').value:'
 
 /* ───── Horario fijo semanal ───── */
 let FX=null;
-F('xday').innerHTML=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((n,i)=>`<option value="${i+1}">${n}</option>`).join('');
+F('xdays').innerHTML=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((n,i)=>`<label><input type="checkbox" value="${i+1}">${n}</label>`).join('');
 F('xresp').innerHTML=F('fresp').innerHTML;
 function openFx(id){const b=id?S.fx.find(x=>x.id===id):null;FX=b;
   F('xcat').innerHTML=S.fam.categories.map(c=>`<option ${c===(b?.category||'Casa')?'selected':''}>${esc(c)}</option>`).join('');
-  F('xtitle').value=b?.title||'';F('xday').value=b?.weekday||dow(pd(S.sel));F('xtime').value=b?.start_time?.slice(0,5)||'09:00';F('xdur').value=b?.duration_min||60;
+  F('xtitle').value=b?.title||'';F('xdays').querySelectorAll('input').forEach(i=>i.checked=+i.value===(b?.weekday||dow(pd(S.sel))));F('xwk').value=b?.week_type||'';F('xwkinfo').textContent=`La semana que estás viendo es la semana ${wtype(S.ws)}. Las semanas A y B se alternan una tras otra.`;F('xtime').value=b?.start_time?.slice(0,5)||'09:00';F('xdur').value=b?.duration_min||60;
   F('xresp').value=b?.responsible||'ambos';F('xdel').hidden=!b;$('#dfx').showModal()}
 $('#newfx').onclick=()=>openFx(null);F('xcancel').onclick=()=>$('#dfx').close();
 $('#fxf').onsubmit=async e=>{e.preventDefault();
-  const v={title:F('xtitle').value.trim(),weekday:+F('xday').value,start_time:F('xtime').value,duration_min:parseInt(F('xdur').value,10),responsible:F('xresp').value,category:F('xcat').value};
+  const days=[...F('xdays').querySelectorAll('input:checked')].map(i=>+i.value);
+  const v={title:F('xtitle').value.trim(),start_time:F('xtime').value,duration_min:parseInt(F('xdur').value,10),responsible:F('xresp').value,category:F('xcat').value,week_type:F('xwk').value||null};
   if(!v.title||!v.start_time||!(v.duration_min>=5&&v.duration_min<=1440)||!R[v.responsible])return toast('Revisa título, hora y duración.');
-  try{await run(FX?sb.from('fixed_blocks').update(v).eq('id',FX.id):sb.from('fixed_blocks').insert({...v,family_id:S.fam.id,created_by:S.user.id}));await fetchFx();$('#dfx').close()}catch(_){}};
+  if(!days.length)return toast('Marca al menos un día.');
+  if(FX&&days.length>1)return toast('Al editar un bloque, marca un solo día.');
+  try{await run(FX?sb.from('fixed_blocks').update({...v,weekday:days[0]}).eq('id',FX.id):sb.from('fixed_blocks').insert(days.map(w=>({...v,weekday:w,family_id:S.fam.id,created_by:S.user.id}))));await fetchFx();$('#dfx').close()}catch(_){}};
 F('xdel').onclick=async()=>{if(!confirm(`¿Quitar «${FX.title}» del horario fijo? Dejará de aparecer todas las semanas.`))return;
   try{await run(sb.from('fixed_blocks').delete().eq('id',FX.id));await fetchFx();$('#dfx').close()}catch(_){}};
 
